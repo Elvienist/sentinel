@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: sentinel-bare
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: STREAM_URL
+        value: ""    # paste your Cloudflare tunnel URL here e.g. https://xxxx.trycloudflare.com/stream
