@@ -1,0 +1,21 @@
+{
+  "_comment": "Copy this file to config.json and edit the values below.",
+
+  "camera_source": "0",
+  "_camera_source_help": [
+    "Use '0' for your laptop's built-in webcam (for testing).",
+    "For a real IP camera use its RTSP URL, e.g.:",
+    "  Hikvision : rtsp://admin:password@192.168.1.10:554/Streaming/Channels/101",
+    "  Dahua     : rtsp://admin:password@192.168.1.10:554/cam/realmonitor?channel=1&subtype=0",
+    "  Generic   : rtsp://192.168.1.10:554/stream1"
+  ],
+
+  "port": 5001,
+  "_port_help": "Port the relay listens on. 5001 is the default.",
+
+  "jpeg_quality": 75,
+  "_jpeg_quality_help": "JPEG compression quality (1-100). Lower = smaller bandwidth.",
+
+  "fps_cap": 25,
+  "_fps_cap_help": "Max frames per second sent to viewers."
+}
