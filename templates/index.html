@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Camera Feed</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: monospace; color: #aaa; }
+    img  { max-width: 100%; max-height: 90vh; display: block; }
+    .offline { text-align: center; padding: 2rem; }
+    .offline p { margin-top: .5rem; font-size: .8rem; color: #555; }
+  </style>
+</head>
+<body>
+  {% if stream_url %}
+    <img src="{{ stream_url }}" alt="Live feed" onerror="this.style.display='none'; document.getElementById('msg').style.display='block'"/>
+    <div id="msg" style="display:none" class="offline">
+      Stream offline<p>Relay may not be running</p>
+    </div>
+  {% else %}
+    <div class="offline">
+      No stream configured<p>Set STREAM_URL environment variable</p>
+    </div>
+  {% endif %}
+</body>
+</html>
