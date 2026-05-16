@@ -11,6 +11,9 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from psycopg2cffi import compat
+compat.register()
+
 # ── App setup ──────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
