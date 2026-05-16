@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}SENTINEL — Admin{% endblock %}
+
+{% block head %}
+<style>
+  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
+  .log-success { color: var(--green); }
+  .log-fail    { color: var(--red); }
+  .truncate    { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stream URL -->
+<div class="section-hdr"><h2>Stream Configuration</h2></div>
+<div class="card" style="margin-bottom:2rem">
+  <form method="POST">
+    <input type="hidden" name="action" value="set_stream_url"/>
+    <div class="field">
+      <label>Cloudflare Tunnel Stream URL</label>
+      <input type="url" name="stream_url" value="{{ stream_url }}"
+             placeholder="https://xxxx.trycloudflare.com/stream"/>
+    </div>
+    <button type="submit" class="btn">Update Stream URL</button>
+  </form>
+  <p style="font-family:var(--mono);font-size:.68rem;color:var(--dim);margin-top:.8rem;line-height:1.6">
+    Run the relay script on your local machine, start the Cloudflare tunnel, then paste the /stream URL here.
+  </p>
+</div>
+
+<div class="admin-grid">
+
+  <!-- Add user -->
+  <div>
+    <div class="section-hdr"><h2>Add User</h2></div>
+    <div class="card">
+      <form method="POST" autocomplete="off">
+        <input type="hidden" name="action" value="create_user"/>
+        <div class="field">
+          <label>Username</label>
+          <input type="text" name="username" required autocomplete="off"/>
+        </div>
+        <div class="field">
+          <label>Password (min 8 chars)</label>
+          <input type="password" name="password" required autocomplete="new-password"/>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" name="is_admin" id="is_admin"/>
+          <label for="is_admin">Grant admin access</label>
+        </div>
+        <button type="submit" class="btn">Create User</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- User list -->
+  <div>
+    <div class="section-hdr"><h2>Users ({{ users|length }})</h2></div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td>{{ u.username }}</td>
+              <td>
+                {% if u.is_admin %}
+                  <span class="tag tag-amber">Admin</span>
+                {% else %}
+                  <span class="tag tag-dim">Viewer</span>
+                {% endif %}
+              </td>
+              <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+              <td>
+                {% if u.id != current_user.id %}
+                <form method="POST" style="display:inline"
+                      onsubmit="return confirm('Delete {{ u.username }}?')">
+                  <input type="hidden" name="action"  value="delete_user"/>
+                  <input type="hidden" name="user_id" value="{{ u.id }}"/>
+                  <button class="btn btn-danger btn-sm">Delete</button>
+                </form>
+                {% else %}
+                  <span style="font-family:var(--mono);font-size:.68rem;color:var(--dim)">(you)</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Access Logs -->
+<div class="section-hdr" style="margin-top:2rem"><h2>Access Log (last 100)</h2></div>
+<div class="card" style="padding:0">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>IP Address</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>{{ log.ip_address }}</td>
+          <td>{{ log.username }}</td>
+          <td class="truncate" title="{{ log.action }}">{{ log.action }}</td>
+          <td>
+            {% if log.success %}
+              <span class="tag tag-green">OK</span>
+            {% else %}
+              <span class="tag tag-red">FAIL</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not logs %}
+        <tr><td colspan="5" style="color:var(--dim);text-align:center;padding:1rem">No logs yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
