@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SENTINEL — Access</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07090a; --bg2: #0c1014; --green: #00e676; --green-d: #00b85c;
+      --red: #ff4444; --border: rgba(0,230,118,0.18); --text: #c5d5c8; --dim: #5a7560;
+      --mono: 'Share Tech Mono', monospace; --sans: 'Rajdhani', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; background: var(--bg); color: var(--text);
+      font-family: var(--sans); display: flex; align-items: center; justify-content: center;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9000;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(0,230,118,0.025) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,230,118,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+    .wrap {
+      width: 100%; max-width: 360px; padding: 1.5rem;
+      position: relative; z-index: 1;
+      animation: rise .45s ease both;
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+    .logo { text-align: center; margin-bottom: 2.2rem; }
+    .logo-icon {
+      width: 48px; height: 48px; margin: 0 auto .9rem;
+      border: 1px solid var(--border); position: relative; display: flex; align-items: center; justify-content: center;
+    }
+    .logo-icon::before, .logo-icon::after { content: ''; position: absolute; background: var(--green); }
+    .logo-icon::before { width: 18px; height: 2px; }
+    .logo-icon::after  { width: 2px; height: 18px; }
+    .logo h1 { font-family: var(--mono); font-size: 1.5rem; color: var(--green); letter-spacing: .25em; }
+    .logo p  { font-family: var(--mono); font-size: .65rem; color: var(--dim); letter-spacing: .15em; margin-top: .25rem; }
+
+    .card { background: var(--bg2); border: 1px solid var(--border); padding: 1.8rem; }
+    .card-hdr {
+      font-family: var(--mono); font-size: .68rem; color: var(--dim);
+      letter-spacing: .15em; text-transform: uppercase; margin-bottom: 1.4rem;
+      display: flex; align-items: center; gap: .6rem;
+    }
+    .card-hdr::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .field { margin-bottom: 1.1rem; }
+    label { display: block; font-family: var(--mono); font-size: .68rem; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; margin-bottom: .3rem; }
+    input[type="text"], input[type="password"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); font-family: var(--mono); font-size: .9rem;
+      padding: .6rem .8rem; outline: none; transition: border-color .15s;
+    }
+    input:focus { border-color: var(--green); }
+
+    .btn-submit {
+      width: 100%; padding: .7rem; margin-top: .5rem;
+      font-family: var(--mono); font-size: .82rem; letter-spacing: .18em; text-transform: uppercase;
+      background: var(--green); color: var(--bg); border: none; cursor: pointer;
+      font-weight: bold; transition: background .15s;
+    }
+    .btn-submit:hover { background: var(--green-d); }
+
+    .error {
+      background: rgba(255,68,68,.08); border-left: 3px solid var(--red);
+      color: var(--red); font-family: var(--mono); font-size: .75rem;
+      padding: .45rem .8rem; margin-bottom: .9rem;
+    }
+    .footer { text-align: center; margin-top: 1.2rem; font-family: var(--mono); font-size: .62rem; color: var(--dim); letter-spacing: .1em; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <h1>SENTINEL</h1>
+    <p>SECURE CAMERA MONITORING SYSTEM</p>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">Authentication Required</div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="error">▶ {{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" autocomplete="off">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="current-password"/>
+      </div>
+      <button type="submit" class="btn-submit">▶ AUTHENTICATE</button>
+    </form>
+  </div>
+
+  <div class="footer">ALL ACCESS ATTEMPTS ARE LOGGED</div>
+</div>
+</body>
+</html>
