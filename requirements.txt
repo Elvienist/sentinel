@@ -3,5 +3,5 @@ flask-sqlalchemy==3.1.1
 flask-login==0.6.3
 flask-limiter==3.7.0
 werkzeug==3.0.3
-psycopg2-binary==2.9.9
+psycopg2cffi==2.9.0
 gunicorn==22.0.0
