@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}SENTINEL{% endblock %}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #07090a;
+      --bg2:      #0c1014;
+      --bg3:      #111820;
+      --green:    #00e676;
+      --green-d:  #00b85c;
+      --green-xs: rgba(0,230,118,0.07);
+      --amber:    #ffb300;
+      --red:      #ff4444;
+      --border:   rgba(0,230,118,0.15);
+      --text:     #c5d5c8;
+      --dim:      #5a7560;
+      --mono:     'Share Tech Mono', monospace;
+      --sans:     'Rajdhani', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; }
+
+    /* scanlines */
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9000;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+    }
+    /* grid */
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(0,230,118,0.025) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,230,118,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 54px;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+    }
+    .brand { font-family: var(--mono); color: var(--green); letter-spacing: .15em; font-size: 1rem; display: flex; align-items: center; gap: .5rem; }
+    .brand-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: blink 1.4s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .nav-links { display: flex; gap: 1.5rem; font-family: var(--sans); font-weight: 600; font-size: .82rem; letter-spacing: .08em; text-transform: uppercase; }
+    .nav-links a { color: var(--dim); transition: color .15s; }
+    .nav-links a:hover, .nav-links a.active { color: var(--green); text-decoration: none; }
+    .nav-user { font-family: var(--mono); font-size: .72rem; color: var(--dim); }
+
+    /* ── MAIN ── */
+    main { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem; position: relative; z-index: 1; }
+
+    /* ── ALERTS ── */
+    .flash-list { margin-bottom: 1.2rem; }
+    .flash {
+      padding: .5rem 1rem; margin-bottom: .4rem;
+      border-left: 3px solid; font-family: var(--mono); font-size: .78rem;
+      background: var(--bg2);
+    }
+    .flash.error   { border-color: var(--red);   color: var(--red); }
+    .flash.success { border-color: var(--green);  color: var(--green); }
+    .flash.info    { border-color: var(--amber);  color: var(--amber); }
+
+    /* ── SECTION HEADER ── */
+    .section-hdr { display: flex; align-items: center; gap: .8rem; margin-bottom: 1.2rem; }
+    .section-hdr h2 { font-family: var(--mono); font-size: .8rem; color: var(--green); letter-spacing: .15em; text-transform: uppercase; white-space: nowrap; }
+    .section-hdr::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── CARD ── */
+    .card { background: var(--bg2); border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1.5rem; }
+
+    /* ── FORM ELEMENTS ── */
+    label { display: block; font-family: var(--mono); font-size: .68rem; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; margin-bottom: .3rem; }
+    input[type="text"], input[type="password"], input[type="url"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); font-family: var(--mono); font-size: .88rem;
+      padding: .55rem .8rem; outline: none; transition: border-color .15s;
+    }
+    input:focus { border-color: var(--green); }
+    .field { margin-bottom: 1rem; }
+    .check-row { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+    .check-row label { margin: 0; font-size: .78rem; }
+    .check-row input { width: auto; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-block; padding: .45rem 1.3rem;
+      font-family: var(--mono); font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
+      border: 1px solid var(--green); background: transparent; color: var(--green);
+      cursor: pointer; transition: background .15s, color .15s;
+    }
+    .btn:hover { background: var(--green); color: var(--bg); }
+    .btn-danger { border-color: var(--red); color: var(--red); }
+    .btn-danger:hover { background: var(--red); color: var(--bg); }
+    .btn-sm { padding: .22rem .65rem; font-size: .7rem; }
+    .btn-full { width: 100%; text-align: center; padding: .7rem; }
+
+    /* ── TABLE ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; padding: .45rem .8rem; border-bottom: 1px solid var(--border); text-align: left; }
+    td { padding: .5rem .8rem; border-bottom: 1px solid rgba(0,230,118,0.05); font-family: var(--mono); font-size: .75rem; color: var(--text); }
+    tr:hover td { background: var(--green-xs); }
+
+    /* ── TAGS ── */
+    .tag { display: inline-block; padding: .08rem .4rem; font-size: .68rem; font-family: var(--mono); border: 1px solid; border-radius: 2px; }
+    .tag-green  { border-color: var(--green); color: var(--green); }
+    .tag-red    { border-color: var(--red);   color: var(--red); }
+    .tag-amber  { border-color: var(--amber);  color: var(--amber); }
+    .tag-dim    { border-color: var(--dim);   color: var(--dim); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+{% if current_user.is_authenticated %}
+<nav>
+  <div class="brand">
+    <span class="brand-dot"></span>SENTINEL
+  </div>
+  <div class="nav-links">
+    <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}class="active"{% endif %}>Live Feed</a>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('admin') }}" {% if request.endpoint == 'admin' %}class="active"{% endif %}>Admin</a>
+    {% endif %}
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+  <div class="nav-user">{{ current_user.username }}</div>
+</nav>
+{% endif %}
+
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-list">
+      {% for cat, msg in messages %}
+      <div class="flash {{ cat }}">▶ {{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
