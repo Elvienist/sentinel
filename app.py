@@ -1,9 +1,9 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, redirect, url_for,
-                   request, flash, Response)
+                   request, flash, session)
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (LoginManager, UserMixin, login_user,
                          login_required, logout_user, current_user)
@@ -11,27 +11,31 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from psycopg2cffi import compat
-compat.register()
-
 # ── App setup ──────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-this-before-deploying')
 
-# Support both postgres:// (Render legacy) and postgresql:// (SQLAlchemy 1.4+)
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///sentinel.db')
 if db_url.startswith('postgres://'):
     db_url = db_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db           = SQLAlchemy(app)
+# ── SECURITY: Session timeout — sessions expire after 30 minutes of inactivity ──
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+
+try:
+    from psycopg2cffi import compat
+    compat.register()
+except ImportError:
+    pass
+
+db            = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view    = 'login'
 login_manager.login_message = 'Please log in to access this page.'
 
-# Rate-limiter — brute-force protection on login
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -67,11 +71,9 @@ class AccessLog(db.Model):
 
 
 class SiteConfig(db.Model):
-    """Key-value store for admin-editable settings (e.g. stream URL)."""
     id    = db.Column(db.Integer, primary_key=True)
     key   = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.String(500))
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +88,6 @@ def get_client_ip():
 
 
 def log_access(action, success, username='anonymous'):
-    """Write every access attempt to the database."""
     try:
         db.session.add(AccessLog(
             ip_address=get_client_ip(),
@@ -127,10 +128,54 @@ def admin_required(f):
     return decorated
 
 
+# ── SECURITY: Apply security headers to every response ────────────────────────
+@app.after_request
+def set_security_headers(response):
+    # Prevents the page being loaded in an iframe — stops clickjacking attacks
+    response.headers['X-Frame-Options'] = 'DENY'
+    # Stops browsers guessing the content type — prevents MIME sniffing attacks
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # Enables browser's built-in XSS filter
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # Tells browsers to only connect via HTTPS for the next year
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    # Controls what info is sent in the Referer header when navigating away
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    # Restricts what browser features the page can use
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    return response
+
+
+# ── SECURITY: HTTPS enforcement — redirect HTTP to HTTPS in production ─────────
+@app.before_request
+def enforce_https():
+    # Only enforce on Render (not locally) — checks for Render's forwarded proto header
+    if request.headers.get('X-Forwarded-Proto') == 'http':
+        return redirect(request.url.replace('http://', 'https://'), code=301)
+
+
+# ── SECURITY: Session timeout — check activity on every request ────────────────
+@app.before_request
+def check_session_timeout():
+    if current_user.is_authenticated:
+        last_active = session.get('last_active')
+        now = datetime.utcnow()
+        if last_active:
+            last_active_dt = datetime.fromisoformat(last_active)
+            if (now - last_active_dt).total_seconds() > 1800:  # 30 minutes
+                log_access('Session expired — auto logout', True, current_user.username)
+                logout_user()
+                session.clear()
+                flash('Your session expired. Please log in again.', 'info')
+                return redirect(url_for('login'))
+        session['last_active'] = now.isoformat()
+        session.permanent = True
+
+
 # ── Auth routes ────────────────────────────────────────────────────────────────
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit('10 per minute')          # max 10 login attempts per minute per IP
+@limiter.limit('10 per minute')
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -142,6 +187,9 @@ def login():
 
         if user and user.check_password(password):
             login_user(user)
+            # ── SECURITY: Set session activity timestamp on login ──────────
+            session['last_active'] = datetime.utcnow().isoformat()
+            session.permanent = True
             log_access('Login successful', True, username)
             return redirect(request.args.get('next') or url_for('index'))
 
@@ -156,8 +204,8 @@ def login():
 def logout():
     log_access('Logout', True, current_user.username)
     logout_user()
+    session.clear()
     return redirect(url_for('login'))
-
 
 # ── Main routes ────────────────────────────────────────────────────────────────
 
@@ -168,7 +216,6 @@ def index():
     log_access('Viewed live feed', True, current_user.username)
     return render_template('index.html', stream_url=stream_url)
 
-
 # ── Admin routes ───────────────────────────────────────────────────────────────
 
 @app.route('/admin', methods=['GET', 'POST'])
@@ -178,14 +225,12 @@ def admin():
     if request.method == 'POST':
         action = request.form.get('action')
 
-        # ── Update stream URL ──
         if action == 'set_stream_url':
             url = request.form.get('stream_url', '').strip()
             set_config('stream_url', url)
-            log_access(f'Updated stream URL', True, current_user.username)
+            log_access('Updated stream URL', True, current_user.username)
             flash('Stream URL updated.', 'success')
 
-        # ── Create user ──
         elif action == 'create_user':
             uname    = request.form.get('username', '').strip()
             password = request.form.get('password', '')
@@ -205,7 +250,6 @@ def admin():
                 log_access(f'Created user: {uname}', True, current_user.username)
                 flash(f'User "{uname}" created.', 'success')
 
-        # ── Delete user ──
         elif action == 'delete_user':
             uid  = request.form.get('user_id')
             user = User.query.get(uid)
@@ -225,7 +269,6 @@ def admin():
     stream_url = get_config('stream_url', '')
     return render_template('admin.html', users=users, logs=logs, stream_url=stream_url)
 
-
 # ── Error handlers ─────────────────────────────────────────────────────────────
 
 @app.errorhandler(429)
@@ -235,6 +278,7 @@ def rate_limited(e):
     return render_template('login.html'), 429
 
 
+# ── SECURITY: Hardened error handlers — no stack traces exposed ────────────────
 @app.errorhandler(404)
 def not_found(e):
     who = current_user.username if current_user.is_authenticated else 'anonymous'
@@ -242,22 +286,32 @@ def not_found(e):
     return redirect(url_for('index'))
 
 
+@app.errorhandler(500)
+def server_error(e):
+    who = current_user.username if current_user.is_authenticated else 'anonymous'
+    log_access('500 - internal server error', False, who)
+    app.logger.error(f'500 error: {e}')
+    flash('An unexpected error occurred.', 'error')
+    return redirect(url_for('index'))
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    who = current_user.username if current_user.is_authenticated else 'anonymous'
+    log_access('403 - forbidden access attempt', False, who)
+    return redirect(url_for('index'))
+
 # ── Startup ────────────────────────────────────────────────────────────────────
 
 def init_db():
     with app.app_context():
         db.create_all()
-        # Seed default admin if database is empty
         if not User.query.first():
             admin = User(username='admin', is_admin=True)
             admin.set_password(os.environ.get('ADMIN_PASSWORD', 'Admin1234!'))
             db.session.add(admin)
             db.session.commit()
-            app.logger.warning(
-                'Default admin created. '
-                'Change the password immediately via the admin panel.'
-            )
-
+            app.logger.warning('Default admin created. Change the password immediately.')
 
 init_db()
 
