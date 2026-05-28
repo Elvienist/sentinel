@@ -65,6 +65,7 @@
             <tr>
               <th>Username</th>
               <th>Role</th>
+              <th>Status</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -74,21 +75,32 @@
             <tr>
               <td>{{ u.username }}</td>
               <td>
-                {% if u.is_admin %}
-                  <span class="tag tag-amber">Admin</span>
+                {% if u.is_admin %}<span class="tag tag-amber">Admin</span>
+                {% else %}<span class="tag tag-dim">Viewer</span>{% endif %}
+              </td>
+              <td>
+                {% if u.is_locked() %}
+                  <span class="tag tag-red">Locked {{ u.lockout_remaining() }}m</span>
                 {% else %}
-                  <span class="tag tag-dim">Viewer</span>
+                  <span class="tag tag-green">Active</span>
                 {% endif %}
               </td>
               <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
-              <td>
+              <td style="display:flex;gap:.4rem;flex-wrap:wrap">
                 {% if u.id != current_user.id %}
-                <form method="POST" style="display:inline"
+                  {% if u.is_locked() %}
+                  <form method="POST" style="display:inline">
+                    <input type="hidden" name="action" value="unlock_user"/>
+                    <input type="hidden" name="user_id" value="{{ u.id }}"/>
+                    <button class="btn btn-sm">Unlock</button>
+                  </form>
+                  {% endif %}
+                  <form method="POST" style="display:inline"
                       onsubmit="return confirm('Delete {{ u.username }}?')">
-                  <input type="hidden" name="action"  value="delete_user"/>
-                  <input type="hidden" name="user_id" value="{{ u.id }}"/>
-                  <button class="btn btn-danger btn-sm">Delete</button>
-                </form>
+                    <input type="hidden" name="action" value="delete_user"/>
+                    <input type="hidden" name="user_id" value="{{ u.id }}"/>
+                    <button class="btn btn-danger btn-sm">Delete</button>
+                  </form>
                 {% else %}
                   <span style="font-family:var(--mono);font-size:.68rem;color:var(--dim)">(you)</span>
                 {% endif %}
