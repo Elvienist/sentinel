@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -51,6 +52,8 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     is_admin      = db.Column(db.Boolean, default=False)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    failed_attempts = db.Column(db.Integer, default=0)
+    locked_until    = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, pw):
         self.password_hash = generate_password_hash(pw)
@@ -58,6 +61,33 @@ class User(UserMixin, db.Model):
     def check_password(self, pw):
         return check_password_hash(self.password_hash, pw)
 
+    def is_locked(self):
+        if self.locked_until and datetime.utcnow() < self.locked_until:
+            return True
+        if self.locked_until and datetime.utcnow() >= self.locked_until:
+            self.failed_attempts = 0
+            self.locked_until = None
+            db.session.add(self)
+            db.session.commit()
+        return False
+
+    def register_failed_attempt(self):
+        self.failed_attempts = (self.failed_attempts or 0) + 1
+        if self.failed_attempts >= 5:
+            self.locked_until = datetime.utcnow() + timedelta(minutes=15)
+        db.session.add(self)
+        db.session.commit()
+
+    def reset_failed_attempts(self):
+        self.failed_attempts = 0
+        self.locked_until    = None
+        db.session.add(self)
+        db.session.commit()
+
+    def lockout_remaining(self):
+        if self.locked_until and datetime.utcnow() < self.locked_until:
+            return int((self.locked_until - datetime.utcnow()).total_seconds() // 60) + 1
+        return 0
 
 class AccessLog(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
@@ -116,6 +146,17 @@ def set_config(key, value):
         db.session.add(SiteConfig(key=key, value=value))
     db.session.commit()
 
+def validate_password(password):
+    errors = []
+    if len(password) < 8:
+        errors.append('at least 8 characters')
+    if not re.search(r'[A-Z]', password):
+        errors.append('at least one uppercase letter')
+    if not re.search(r'[0-9]', password):
+        errors.append('at least one number')
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        errors.append('at least one special character')
+    return errors
 
 def admin_required(f):
     @wraps(f)
@@ -175,7 +216,7 @@ def check_session_timeout():
 # ── Auth routes ────────────────────────────────────────────────────────────────
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit('10 per minute')
+@limiter.limit('20 per minute')
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -185,16 +226,32 @@ def login():
         password = request.form.get('password', '')
         user     = User.query.filter_by(username=username).first()
 
+        if user and user.is_locked():
+            mins = user.lockout_remaining()
+            log_access('Login attempt on locked account', False, username)
+            flash(f'Account locked. Try again in {mins} minute(s).', 'error')
+            return render_template('login.html')
+
         if user and user.check_password(password):
+            user.reset_failed_attempts()
             login_user(user)
-            # ── SECURITY: Set session activity timestamp on login ──────────
             session['last_active'] = datetime.utcnow().isoformat()
             session.permanent = True
             log_access('Login successful', True, username)
             return redirect(request.args.get('next') or url_for('index'))
 
-        log_access('Failed login attempt', False, username or 'unknown')
-        flash('Invalid username or password.', 'error')
+        if user:
+            user.register_failed_attempt()
+            if user.is_locked():
+                log_access('Account locked after repeated failures', False, username)
+                flash('Account locked for 15 minutes due to too many failed attempts.', 'error')
+            else:
+                remaining = 5 - user.failed_attempts
+                log_access(f'Failed login attempt ({user.failed_attempts}/5)', False, username)
+                flash(f'Invalid password. {remaining} attempt(s) remaining before lockout.', 'error')
+        else:
+            log_access('Failed login — unknown username', False, username or 'unknown')
+            flash('Invalid username or password.', 'error')
 
     return render_template('login.html')
 
@@ -238,17 +295,27 @@ def admin():
 
             if not uname or not password:
                 flash('Username and password are required.', 'error')
-            elif len(password) < 8:
-                flash('Password must be at least 8 characters.', 'error')
-            elif User.query.filter_by(username=uname).first():
-                flash(f'Username "{uname}" already exists.', 'error')
             else:
-                u = User(username=uname, is_admin=is_admin)
-                u.set_password(password)
-                db.session.add(u)
-                db.session.commit()
-                log_access(f'Created user: {uname}', True, current_user.username)
-                flash(f'User "{uname}" created.', 'success')
+                errors = validate_password(password)
+                if errors:
+                    flash(f'Password must contain: {", ".join(errors)}.', 'error')
+                elif User.query.filter_by(username=uname).first():
+                    flash(f'Username "{uname}" already exists.', 'error')
+                else:
+                    u = User(username=uname, is_admin=is_admin)
+                    u.set_password(password)
+                    db.session.add(u)
+                    db.session.commit()
+                    log_access(f'Created user: {uname}', True, current_user.username)
+                    flash(f'User "{uname}" created.', 'success')
+
+        elif action == 'unlock_user':
+            uid  = request.form.get('user_id')
+            user = User.query.get(uid)
+            if user:
+                user.reset_failed_attempts()
+                log_access(f'Admin unlocked account: {user.username}', True, current_user.username)
+                flash(f'Account "{user.username}" unlocked.', 'success')
 
         elif action == 'delete_user':
             uid  = request.form.get('user_id')
@@ -305,6 +372,8 @@ def forbidden(e):
 
 def init_db():
     with app.app_context():
+        if not os.environ.get('DATABASE_URL', '').startswith('postgresql'):
+            db.drop_all()
         db.create_all()
         if not User.query.first():
             admin = User(username='admin', is_admin=True)
