@@ -375,6 +375,18 @@ def init_db():
         if not os.environ.get('DATABASE_URL', '').startswith('postgresql'):
             db.drop_all()
         db.create_all()
+        # ── Migration: add new columns if they don't exist ─────────────────
+        with db.engine.connect() as conn:
+            try:
+                conn.execute(db.text('ALTER TABLE "user" ADD COLUMN failed_attempts INTEGER DEFAULT 0'))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            try:
+                conn.execute(db.text('ALTER TABLE "user" ADD COLUMN locked_until TIMESTAMP'))
+                conn.commit()
+            except Exception:
+                conn.rollback()
         if not User.query.first():
             admin = User(username='admin', is_admin=True)
             admin.set_password(os.environ.get('ADMIN_PASSWORD', 'Admin1234!'))
