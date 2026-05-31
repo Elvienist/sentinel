@@ -87,38 +87,66 @@ class Camera:
 
 camera = Camera(CAMERA_SRC)
 
+# ── Connection tracking ────────────────────────────────────────────────────────
+active_connections = 0
+connections_lock   = threading.Lock()
+MAX_CONNECTIONS    = 15  # hard ceiling
+
 # ── Flask app ──────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 CORS(app)   # allow the Render app to embed the stream cross-origin
 
-
 def generate():
-    """Yield MJPEG frames for the browser."""
-    interval = 1.0 / FPS_CAP
+    """Yield MJPEG frames for one viewer. Tracks connection count and cleans up on disconnect."""
+    global active_connections
+    interval      = 1.0 / FPS_CAP
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, QUALITY]
 
-    while True:
-        frame = camera.get_frame()
-        if frame is None:
-            time.sleep(0.1)
-            continue
+    with connections_lock:
+        active_connections += 1
+        count = active_connections
+    print(f'[RELAY] Viewer connected — active: {count}')
 
-        ok, buf = cv2.imencode('.jpg', frame, encode_params)
-        if not ok:
-            continue
+    try:
+        last_frame = None
+        while True:
+            frame = camera.get_frame()
+            if frame is None:
+                time.sleep(0.1)
+                continue
 
-        yield (
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n'
-            + buf.tobytes()
-            + b'\r\n'
-        )
-        time.sleep(interval)
+            # Skip encoding if frame hasn't changed (saves CPU at low FPS cap)
+            if last_frame is not None and frame.data == last_frame.data:
+                time.sleep(interval)
+                continue
+            last_frame = frame
+
+            ok, buf = cv2.imencode('.jpg', frame, encode_params)
+            if not ok:
+                continue
+
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n'
+                + buf.tobytes()
+                + b'\r\n'
+            )
+            time.sleep(interval)
+    except GeneratorExit:
+        pass
+    finally:
+        with connections_lock:
+            active_connections -= 1
+            count = active_connections
+        print(f'[RELAY] Viewer disconnected — active: {count}')
 
 
 @app.route('/stream')
 def stream():
+    with connections_lock:
+        if active_connections >= MAX_CONNECTIONS:
+            return 'Stream at capacity', 503
     return Response(
         generate(),
         mimetype='multipart/x-mixed-replace; boundary=frame'
@@ -129,7 +157,12 @@ def stream():
 def health():
     """Simple health-check endpoint."""
     frame = camera.get_frame()
-    return {'status': 'ok', 'camera': frame is not None}
+    return {
+        'status'     : 'ok',
+        'camera'     : frame is not None,
+        'viewers'    : active_connections,
+        'capacity'   : MAX_CONNECTIONS
+    }
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
