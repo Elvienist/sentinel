@@ -19,7 +19,7 @@ import time
 import threading
 
 import cv2
-from flask import Flask, Response
+from flask import Flask, Response, request
 from flask_cors import CORS
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -39,6 +39,7 @@ CAMERA_SRC = config.get('camera_source', '0')   # '0' = webcam, or RTSP URL
 PORT       = int(config.get('port', 5001))
 QUALITY    = int(config.get('jpeg_quality', 75))  # 1-100
 FPS_CAP    = int(config.get('fps_cap', 25))
+STREAM_KEY  = config.get('stream_key', '')
 
 # Convert '0' string to integer for webcam index
 if isinstance(CAMERA_SRC, str) and CAMERA_SRC.isdigit():
@@ -144,6 +145,8 @@ def generate():
 
 @app.route('/stream')
 def stream():
+    if STREAM_KEY and request.args.get('key') != STREAM_KEY:
+        return 'Unauthorised', 401
     with connections_lock:
         if active_connections >= MAX_CONNECTIONS:
             return 'Stream at capacity', 503
