@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -105,11 +106,31 @@ class SiteConfig(db.Model):
     key   = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.String(500))
 
+class ActiveSession(db.Model):
+    """One row per live login. Cleared on logout or when a new login supersedes it."""
+    id            = db.Column(db.Integer, primary_key=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    session_token = db.Column(db.String(64), unique=True, nullable=False)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    last_active   = db.Column(db.DateTime, default=datetime.utcnow)
+    ip_address    = db.Column(db.String(100))
+    username      = db.Column(db.String(80))  # denormalised for easy admin display
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    user = User.query.get(int(user_id))
+    if user is None:
+        return None
+    # If no token in session yet (e.g. mid-request before login completes), pass through
+    token = session.get('session_token')
+    if token:
+        record = ActiveSession.query.filter_by(user_id=user.id, session_token=token).first()
+        if not record:
+            # Token not in DB — session was superseded by a newer login or kicked by admin
+            return None
+    return user
 
 
 def get_client_ip():
@@ -211,6 +232,13 @@ def check_session_timeout():
                 return redirect(url_for('login'))
         session['last_active'] = now.isoformat()
         session.permanent = True
+        # Keep the ActiveSession row's last_active in sync
+        token = session.get('session_token')
+        if token:
+            rec = ActiveSession.query.filter_by(session_token=token).first()
+            if rec:
+                rec.last_active = now
+                db.session.commit()
 
 
 # ── Auth routes ────────────────────────────────────────────────────────────────
@@ -234,8 +262,21 @@ def login():
 
         if user and user.check_password(password):
             user.reset_failed_attempts()
+            # Invalidate any existing sessions for this user (concurrent session control)
+            ActiveSession.query.filter_by(user_id=user.id).delete()
+            db.session.commit()
+            # Create a new session record
+            token = str(uuid.uuid4())
+            db.session.add(ActiveSession(
+                user_id=user.id,
+                session_token=token,
+                ip_address=get_client_ip(),
+                username=user.username
+            ))
+            db.session.commit()
             login_user(user)
-            session['last_active'] = datetime.utcnow().isoformat()
+            session['session_token'] = token
+            session['last_active']   = datetime.utcnow().isoformat()
             session.permanent = True
             log_access('Login successful', True, username)
             return redirect(request.args.get('next') or url_for('index'))
@@ -260,6 +301,10 @@ def login():
 @login_required
 def logout():
     log_access('Logout', True, current_user.username)
+    token = session.get('session_token')
+    if token:
+        ActiveSession.query.filter_by(session_token=token).delete()
+        db.session.commit()
     logout_user()
     session.clear()
     return redirect(url_for('login'))
@@ -330,11 +375,26 @@ def admin():
                 db.session.commit()
                 log_access(f'Deleted user: {name}', True, current_user.username)
                 flash(f'User "{name}" deleted.', 'success')
+        
+        elif action == 'kick_session':
+            sid = request.form.get('session_id')
+            rec = ActiveSession.query.get(sid)
+            if rec and rec.user_id != current_user.id:
+                kicked_user = rec.username
+                db.session.delete(rec)
+                db.session.commit()
+                log_access(f'Admin kicked session for: {kicked_user}', True, current_user.username)
+                flash(f'Session for "{kicked_user}" terminated.', 'success')
+            elif rec and rec.user_id == current_user.id:
+                flash('You cannot kick your own session.', 'error')
 
-    users      = User.query.order_by(User.created_at.desc()).all()
-    logs       = AccessLog.query.order_by(AccessLog.timestamp.desc()).limit(100).all()
-    stream_url = get_config('stream_url', '')
-    return render_template('admin.html', users=users, logs=logs, stream_url=stream_url)
+   # AFTER
+    users           = User.query.order_by(User.created_at.desc()).all()
+    logs            = AccessLog.query.order_by(AccessLog.timestamp.desc()).limit(100).all()
+    active_sessions = ActiveSession.query.order_by(ActiveSession.created_at.desc()).all()
+    stream_url      = get_config('stream_url', '')
+    return render_template('admin.html', users=users, logs=logs,
+                           active_sessions=active_sessions, stream_url=stream_url)
 
 # ── Error handlers ─────────────────────────────────────────────────────────────
 
