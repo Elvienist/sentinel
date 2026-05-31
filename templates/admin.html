@@ -115,7 +115,48 @@
 
 </div>
 
-<!-- Access Logs -->
+<!-- Active Sessions -->
+<div class="section-hdr" style="margin-top:2rem"><h2>Active Sessions ({{ active_sessions|length }})</h2></div>
+<div class="card" style="padding:0;margin-bottom:2rem">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>IP Address</th>
+          <th>Logged In</th>
+          <th>Last Active</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in active_sessions %}
+        <tr>
+          <td>{{ s.username }}</td>
+          <td>{{ s.ip_address }}</td>
+          <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>{{ s.last_active.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>
+            {% if s.user_id != current_user.id %}
+            <form method="POST" style="display:inline"
+                onsubmit="return confirm('Terminate session for {{ s.username }}?')">
+              <input type="hidden" name="action" value="kick_session"/>
+              <input type="hidden" name="session_id" value="{{ s.id }}"/>
+              <button class="btn btn-danger btn-sm">Kick</button>
+            </form>
+            {% else %}
+            <span style="font-family:var(--mono);font-size:.68rem;color:var(--dim)">(you)</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not active_sessions %}
+        <tr><td colspan="5" style="color:var(--dim);text-align:center;padding:1rem">No active sessions.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="section-hdr" style="margin-top:2rem"><h2>Access Log (last 100)</h2></div>
 <div class="card" style="padding:0">
   <div class="table-wrap">
